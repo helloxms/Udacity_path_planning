@@ -49,22 +49,41 @@ int getLane(double d)
 //base struct for path planning/ change lane / status info
 typedef struct LaneStat {
     double target_d;
-    vector<Vehicle> obstacles;
-    Vehicle target_to_follow;
-    int following_target_id;
-    double dist_to_target;
-
+    vector<Vehicle> front_obstacles;
+    vector<Vehicle> back_obstacles;
+    Vehicle front_to_follow;
+    Vehicle back_vehicle;
+    double front_obstacle_dist;
+    double back_obstacle_dist;
+    
     vector<double> ptsx;  //planning trajectory
     vector<double> ptsy;
     
     bool obstacle_following; // if false: velocity keeping
-    bool feasible_traj_exist;
-    int optimal_s_id;
-    int optimal_d_id;
     double minimal_cost;
-    int iters;
+    
+    //used for change line and keep some time
+    bool bReadyChangeLane;
+    bool inChangeLane;
+    int iTargetLane;
+    int ChangeLaneKeepTime;
+    int ChangeLaneDurTime;
 } LaneStat;
 
+void initVehicleStat(LaneStat& curLaneStat)
+{
+    
+    curLaneStat.front_obstacle_dist = 999.9;
+    curLaneStat.obstacle_following = false;
+    curLaneStat.back_obstacle_dist = -999.9;
+
+    curLaneStat.minimal_cost = 9999999.9;
+    curLaneStat.inChangeLane = false;
+    curLaneStat.ChangeLaneKeepTime = 100;
+    curLaneStat.ChangeLaneDurTime = 0;
+    curLaneStat.bReadyChangeLane = false;
+
+}
 // For converting back and forth between radians and degrees.
 constexpr double pi() { return M_PI; }
 double deg2rad(double x) { return x * pi() / 180; }
@@ -252,10 +271,15 @@ int main() {
   }
 
     //start in lane 1
-    int lane = 1;
+    //int istartlane = 1;
     //have a reference velocity to target
     double ref_vel = 0.0;  //mph
-  h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &lane](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+    //my car stat
+    LaneStat curVehicleStat;
+    initVehicleStat(curVehicleStat);
+    curVehicleStat.target_d = 2.0 + 4 - 0.15; //int istartlane = 1;
+    
+  h.onMessage([&ref_vel,&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy, &curVehicleStat](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -298,17 +322,9 @@ int main() {
             for (int i=0; i<3; i++) {
                 double _target_d = 2.0 + 4* i - 0.15;
                 LaneStat lanestat;
-
-            
-                lanestat.target_d = _target_d;
-                lanestat.dist_to_target = 999.9;
-                lanestat.obstacle_following = false;
-                lanestat.feasible_traj_exist = true;
-                lanestat.minimal_cost = 9999999.9;
-                lanestat.optimal_s_id = 0;
-                lanestat.optimal_d_id = 0;
-                lanestat.iters = -1;
                 
+                initVehicleStat(lanestat);
+                lanestat.target_d = _target_d;
                 vLaneStat.push_back(lanestat);
             }
             
@@ -322,7 +338,7 @@ int main() {
                 double d_other = sensor_fusion[i][6];
                 
                 double detect_front = 70.0;
-                double detect_back = 20.0;
+                double detect_back = 30.0;
                 if((s_dist < detect_front) && (s_dist >= -detect_back) && (d_other > 0))
                 {
                     Vehicle vehicle;
@@ -334,7 +350,8 @@ int main() {
                     vehicle.s  = sensor_fusion[i][5];
                     vehicle.d  = sensor_fusion[i][6];
                     vehicle.speed = sqrt(vehicle.vx * vehicle.vx + vehicle.vy * vehicle.vy);
-                    
+                    int iLane = getLane(vehicle.d);
+                    //printf("id=%d s_dist=%f d_other=%d speed=%f \n", vehicle.id, s_dist, iLane, vehicle.speed);
                     NearbyVehicles.push_back(vehicle);
                 }
                 
@@ -343,36 +360,49 @@ int main() {
             int  mylane = getLane(car_d);
             
             //get nearest vehicle for each lane
+            //include front_obstacle and back_obstacle
             for(int i=0; i < NearbyVehicles.size(); i++)
             {
                 Vehicle ve = NearbyVehicles[i];
                 for(int j=0;j < vLaneStat.size();j++ )
                 {
-                    if((ve.d > vLaneStat[j].target_d - 2)  && (ve.d <= vLaneStat[i].target_d + 2))
+                    if((ve.d > vLaneStat[j].target_d - 2)  && (ve.d <= vLaneStat[j].target_d + 2))
                     {
                         double distance_s = ve.s - car_s;
                         if(j == mylane )
                         {
-                            if(distance_s >0 && distance_s <30)
-                                vLaneStat[j].obstacles.push_back(ve);
+                            if(distance_s >0 )
+                                vLaneStat[j].front_obstacles.push_back(ve);
                             
                         }
                         else
                         {
-                            vLaneStat[j].obstacles.push_back(ve);
+                            if(distance_s > -5.0)
+                            vLaneStat[j].front_obstacles.push_back(ve);
+                            if(distance_s < -1.0)
+                            vLaneStat[j].back_obstacles.push_back(ve);
                         }
                         
-                        if(distance_s >= -1.0)
+                        if(distance_s >= -5.0)
                         {
-                            if(distance_s < vLaneStat[j].dist_to_target)
+                            if(distance_s < vLaneStat[j].front_obstacle_dist)
                             {
-                                vLaneStat[j].dist_to_target = distance_s;
-                                vLaneStat[j].target_to_follow = ve;
+                                vLaneStat[j].front_obstacle_dist = distance_s;
+                                vLaneStat[j].front_to_follow = ve;
                             }
                             if(distance_s <= 65){
                                 vLaneStat[j].obstacle_following = true;
                             }
                         }
+                        if(distance_s < -1.0)
+                        {
+                            if(distance_s > vLaneStat[j].back_obstacle_dist)
+                            {
+                                vLaneStat[j].back_obstacle_dist = distance_s;
+                                vLaneStat[j].back_vehicle = ve;
+                            }
+                        }
+
                         
                     }
                 }
@@ -391,7 +421,8 @@ int main() {
             {
                 //car is in my lane
                 float d = sensor_fusion[i][6];
-                if( d < (2+4*lane+2) && d > (2+4*lane-2))
+                int iCurLane = getLane(car_d);
+                if( d < (2+4*iCurLane+2) && d > (2+4*iCurLane-2))
                 {
                     double vx = sensor_fusion[i][3];
                     double vy = sensor_fusion[i][4];
@@ -440,15 +471,77 @@ int main() {
             // get the lower cost trajectory
             for (int iLane=0; iLane<3; iLane++)
             {
+                
+                //here is the stat machine logic
+                //
+                // efficiency:  keep high speed
+                // comfort:     keep low acceleration
+                // safe:        if there are front_obstacles,or back_obstacles don't change lane
                 if( abs(iLane-mylane) >1)
                 {
                     continue;
+                }
 
+                
+                double kd = 2.0 ;  //s direction change coefficient
+                double ks = 1.0 ;  //d direction change coefficient
+
+                double dValue = abs(vLaneStat[iLane].target_d - car_d);
+                double sValue = abs(car_speed - 50);
+                
+                int iCurFrontObstaclesSize = vLaneStat[iLane].front_obstacles.size();
+                int iCurBackObstaclesSize = vLaneStat[iLane].back_obstacles.size();
+                if( curVehicleStat.inChangeLane && iLane == curVehicleStat.iTargetLane ){
+                    if(curVehicleStat.ChangeLaneDurTime < curVehicleStat.ChangeLaneKeepTime){
+                        curVehicleStat.ChangeLaneDurTime++;
+                        kd = -3.0;
+                    }
+                    else{
+                        curVehicleStat.iTargetLane = mylane;
+                        curVehicleStat.inChangeLane = false;
+                        curVehicleStat.ChangeLaneDurTime=0;
+                    }
+                    //printf("%d in lane change ...\n", iLane);
                 }
-                if( vLaneStat[i].obstacle.size() > 0 && iLane != mylane)
+                else
                 {
-                    continue;
+                    if( too_close && iLane != mylane &&
+                       iCurFrontObstaclesSize == 0 &&
+                       iCurBackObstaclesSize == 0){
+                        kd -= 3.0;
+                        if(iLane < mylane)
+                        kd -= 1.0;
+                        printf("find a good lane %d \n", iLane);
+                        curVehicleStat.bReadyChangeLane = true;
+                    }
+                    if( too_close && iLane != mylane && iCurFrontObstaclesSize > 0){
+                        //Vehicle curVehicle = vLaneStat[iLane].front_to_follow;
+                        if( vLaneStat[iLane].front_obstacle_dist > 60 &&
+                            vLaneStat[iLane].back_obstacle_dist < -30
+                           ){
+                            kd -= 2.0;
+                            if(iLane < mylane)
+                            kd -= 1.0;
+                            printf("find a posible lane %d  front obstacle size=%d  back obstacle size=%d \n", iLane, iCurFrontObstaclesSize, iCurBackObstaclesSize);
+                            printf("find a posible lane %d  front_obstacle_dist=%f  back_obstacle_dist=%f \n", iLane, vLaneStat[iLane].front_obstacle_dist, vLaneStat[iLane].back_obstacle_dist);
+                            curVehicleStat.bReadyChangeLane = true;
+                        }
+                    }
+                    if( too_close)
+                    {
+                        printf("finding new path...\n");
+                        printf("find a posible lane %d  front obstacle size=%d  back obstacle size=%d \n", iLane, iCurFrontObstaclesSize, iCurBackObstaclesSize);
+                        printf("find a posible lane %d  front_obstacle_dist=%f  back_obstacle_dist=%f \n", iLane, vLaneStat[iLane].front_obstacle_dist, vLaneStat[iLane].back_obstacle_dist);
+                    }
+                    else
+                    {
+                        //printf("keep lane...\n");
+                    }
                 }
+                
+                vLaneStat[iLane].minimal_cost = kd*dValue + ks*sValue;
+                //printf("%d lane minimal cost= %f \n", iLane, vLaneStat[iLane].minimal_cost);
+                
                 //create a list of widely spaced x,y waypoints, evenly spaced at 30m(less than obstacle vehicle)
                 //later used to interpolate these waypoints with a spline and fill it in with more points
                 //that controll the speed.
@@ -460,7 +553,7 @@ int main() {
                 double ref_y = car_y;
                 double ref_yaw = deg2rad(car_yaw);
                 
-                printf("prev size=%d  car_x=%f car_y=%f yaw=%f \n", prev_size, car_x, car_y, car_yaw);
+                //printf("prev size=%d  car_x=%f car_y=%f yaw=%f \n", prev_size, car_x, car_y, car_yaw);
                 //if previous size is almost empty, use the car as starting reference
                 if(prev_size < 2)
                 {
@@ -473,7 +566,7 @@ int main() {
                     ptsy.push_back(prev_car_y);
                     ptsy.push_back(car_y);
                     
-                    printf("prevsize<2 %f %f\n", prev_car_x, car_x);
+                    //printf("prevsize<2 %f %f\n", prev_car_x, car_x);
                 }
                 //use the previous path's end points as starting reference
                 else
@@ -491,10 +584,9 @@ int main() {
                     ptsy.push_back(ref_y_prev);
                     ptsy.push_back(ref_y);
                     
-                    printf("prevsize>2 %f %f\n", ref_x_prev, ref_x);
+                    //printf("prevsize>2 %f %f\n", ref_x_prev, ref_x);
                 }
 
-            
                 //in frenet add evenly 30m spaced points ahead of the starting reference
                 vector<double> next_wp0 = getXY(car_s+30, (2+4*iLane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
                 vector<double> next_wp1 = getXY(car_s+60, (2+4*iLane), map_waypoints_s, map_waypoints_x, map_waypoints_y);
@@ -568,12 +660,35 @@ int main() {
                     
                     vLaneStat[iLane].ptsx.push_back(x_point);
                     vLaneStat[iLane].ptsy.push_back(y_point);
-                    //next_x_vals.push_back(x_point);
-                    //next_y_vals.push_back(y_point);
+
                     //printf("%f  next_x_value size=%d \n",x_point, next_x_vals.size());
 
                 }
             }//end of vLaneStat
+            
+            //get min costvalue trajectory
+            int iTargetLane = mylane;
+            double costValue = 999;
+            for(int i=0; i< 3;i++)
+            {
+                if( vLaneStat[i].minimal_cost < costValue)
+                {
+                    costValue = vLaneStat[i].minimal_cost;
+                    iTargetLane = i;
+                }
+            }
+            if( iTargetLane != mylane)
+            {
+                curVehicleStat.iTargetLane = iTargetLane;
+                curVehicleStat.inChangeLane = true;
+                curVehicleStat.bReadyChangeLane = false;
+            }
+            for(int i=0;i<= 50 - previous_path_x.size(); i++)
+            {
+                
+                next_x_vals.push_back(vLaneStat[iTargetLane].ptsx[i]);
+                next_y_vals.push_back(vLaneStat[iTargetLane].ptsy[i]);
+            }
             
           	msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;

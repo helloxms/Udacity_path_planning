@@ -112,6 +112,7 @@ check every lane,get vehicles whitch are in main car's range.
 	9. **update waypoints** update waypoints to simulator in every 0.02 seconds.
 
 - result display
+![change lane](https://github.com/helloxms/Udacity_path_planning/tree/master/CarND-Path-Planning-Project/drive1.png "drive1")
 
 
  

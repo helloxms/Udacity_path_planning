@@ -89,7 +89,7 @@ stat,used for change lane and keep lane.
 
 - flow chart
 
-![flow chart](https://github.com/helloxms/Udacity_path_planning/tree/master/CarND-Path-Planning-Project/workflow.png "flow chart")
+![flow chart](https://github.com/helloxms/Udacity_path_planning/tree/master/CarND-Path-Planning-Project/workflow.png?raw=true "flow chart")
 
 - some core function and core logic
 
@@ -115,7 +115,7 @@ check every lane,get vehicles whitch are in main car's range.
 
 - result display
 
-![change lane](https://github.com/helloxms/Udacity_path_planning/tree/master/CarND-Path-Planning-Project/drive1.png "drive1")
+![change lane](https://github.com/helloxms/Udacity_path_planning/tree/master/CarND-Path-Planning-Project/drive1.png?raw=true "drive1")
 
 
  

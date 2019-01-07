@@ -1,7 +1,7 @@
 # Udacity CarND Path Planning Project
 Self-Driving Car Engineer Nanodegree Program
 
-##Introduction
+## Introduction
 In this project, my goal is to design a path planner that is able to create smooth, safe paths for the car to follow
  along a 3 lane highway with traffic.This path planner will be able to keep inside its lane, avoid hitting other cars, and passw slower moving traffic all by using localizaion,sensor fusion, and map data.
 
@@ -61,10 +61,10 @@ In this project, my goal is to design a path planner that is able to create smoo
 * [uWebSockets](https://github.com/uWebSockets/uWebSockets)
 
 
-##My WorkFlow
+## My WorkFlow
 thanks for Aaron Brown AND  David Silver's explanation course.
 
-####Base Step
+#### Base Step
 - install working condition and build project
 (uWebSockets,ssh lib, build local server etc.)
 - run the local server and the simulator
@@ -74,7 +74,7 @@ thanks for Aaron Brown AND  David Silver's explanation course.
  x/y,end path x/y,sensor fusion data )
 - use Main car's global localization ,use spline interpolation curve, use sensor fusion data, create a path planning controller
 
-####Code Detail
+#### Code Detail
 
 - create base Vehicle structor , PathPlanning structor and  
 VehicleStatMachine structor;
